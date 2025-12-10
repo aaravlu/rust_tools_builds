@@ -1,0 +1,218 @@
+name: Build Rust Tools
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+        tool: [cargo-cache, cargo-clippy, cargo-nextest, rustfmt, rust-analyzer]
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.tool }} on ${{ matrix.os }}
+
+    steps:
+      - name: Enable long paths in git (Windows only)
+        if: matrix.os == 'windows-2022'
+        run: |
+          git config --system core.longpaths true
+
+      - name: Enable long paths in Windows registry
+        if: matrix.os == 'windows-2022'
+        run: |
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+            -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+
+      - name: Checkout self
+        uses: actions/checkout@v6
+
+      - name: Checkout ${{ matrix.tool }}
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ fromJSON('{"cargo-cache":"matthiaskrgr/cargo-cache","cargo-clippy":"rust-lang/rust-clippy","cargo-nextest":"nextest-rs/nextest","rustfmt":"rust-lang/rustfmt","rust-analyzer":"rust-lang/rust-analyzer"}')[matrix.tool] }}
+          ref: ${{ fromJSON('{"cargo-cache":"refs/tags/0.8.3","cargo-clippy":"refs/tags/rustc-1.80.0-2024-06-13","cargo-nextest":"refs/tags/cargo-nextest-0.9.70","rustfmt":"refs/tags/rustfmt-1.7.0","rust-analyzer":"refs/tags/2024-06-17"}')[matrix.tool] }}
+          path: tool-source
+
+      - name: Copy cargo config
+        run: |
+          mkdir -p tool-source/.cargo
+          cp .cargo/config.toml tool-source/.cargo/
+
+      - name: Build tool
+        shell: bash
+        run: |
+          cd tool-source
+
+          # 检查是否有Cargo.toml文件
+          if [ -f "Cargo.toml" ]; then
+            echo "Building with cargo..."
+            cargo build --release --locked
+          elif [ -f "Cargo.lock" ]; then
+            echo "Building with cargo (Cargo.lock found)..."
+            cargo build --release
+          elif [ -f "rust-toolchain" ] || [ -f "rust-toolchain.toml" ]; then
+            echo "Building with rust toolchain..."
+            cargo build --release
+          else
+            echo "No Cargo.toml found, checking for alternative build methods..."
+
+            # 检查是否有Makefile或build.rs
+            if [ -f "Makefile" ]; then
+              echo "Building with make..."
+              make release
+            elif [ -f "build.rs" ]; then
+              echo "Building with cargo (build.rs found)..."
+              cargo build --release
+            else
+              echo "ERROR: No recognized build configuration found"
+              exit 1
+            fi
+          fi
+
+      - name: Package artifact
+        run: |
+          # 确定可执行文件名称
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            EXE_NAME="${{ matrix.tool }}.exe"
+            EXE_PATTERN="*.exe"
+          else
+            EXE_NAME="${{ matrix.tool }}"
+            EXE_PATTERN="${{ matrix.tool }}"
+          fi
+
+          # 在多个可能的位置查找可执行文件
+          POSSIBLE_PATHS=(
+            "tool-source/target/release/$EXE_NAME"
+            "tool-source/target/release/deps/$EXE_NAME"
+            "tool-source/target/x86_64-pc-windows-msvc/release/$EXE_NAME"
+            "tool-source/target/x86_64-unknown-linux-gnu/release/$EXE_NAME"
+            "tool-source/target/release/*"
+            "tool-source/target/*/release/$EXE_NAME"
+          )
+
+          # 创建artifacts目录
+          mkdir -p artifacts
+
+          # 尝试从已知路径复制
+          FOUND=false
+          for path in "${POSSIBLE_PATHS[@]}"; do
+            if [ -f "$path" ]; then
+              echo "Found executable at: $path"
+              cp "$path" artifacts/
+              FOUND=true
+              break
+            fi
+          done
+
+          # 如果没找到，尝试使用find命令
+          if [ "$FOUND" = false ]; then
+            echo "Searching for executable with pattern: $EXE_PATTERN"
+            find tool-source/target -name "$EXE_PATTERN" -type f | head -1 | xargs -I {} cp {} artifacts/ 2>/dev/null || true
+          fi
+
+          # 检查是否成功复制了文件
+          if [ -z "$(ls -A artifacts/ 2>/dev/null)" ]; then
+            echo "WARNING: No executable found for ${{ matrix.tool }}"
+            # 创建空文件作为标记
+            touch artifacts/empty.txt
+          else
+            echo "Successfully packaged artifact"
+            ls -la artifacts/
+          fi
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.tool }}-${{ matrix.os }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+  collect-artifacts:
+    name: Collect All Artifacts
+    runs-on: ubuntu-24.04
+    needs: build
+    if: always()
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded artifacts structure:"
+          find all-artifacts -type f | sort
+          echo ""
+          echo "Total files:"
+          find all-artifacts -type f | wc -l
+
+      - name: Create summary report
+        run: |
+          echo "# Build Summary Report" > summary.md
+          echo "" >> summary.md
+          echo "Generated on: $(date)" >> summary.md
+          echo "" >> summary.md
+          echo "## Build Matrix" >> summary.md
+          echo "" >> summary.md
+          echo "| Tool | Ubuntu 24.04 | Windows 2022 |" >> summary.md
+          echo "|------|--------------|--------------|" >> summary.md
+
+          # Check each tool for both platforms
+          for tool in cargo-cache cargo-clippy cargo-nextest rustfmt rust-analyzer; do
+            ubuntu_file="all-artifacts/${tool}-ubuntu-24.04/${tool}"
+            windows_file="all-artifacts/${tool}-windows-2022/${tool}.exe"
+
+            ubuntu_status="❌"
+            windows_status="❌"
+
+            if [ -f "$ubuntu_file" ] && [ -s "$ubuntu_file" ]; then
+              ubuntu_status="✅"
+            fi
+
+            if [ -f "$windows_file" ] && [ -s "$windows_file" ]; then
+              windows_status="✅"
+            fi
+
+            echo "| $tool | $ubuntu_status | $windows_status |" >> summary.md
+          done
+
+          echo "" >> summary.md
+          echo "## Artifact Details" >> summary.md
+          echo "" >> summary.md
+
+          for artifact_dir in all-artifacts/*/; do
+            if [ -d "$artifact_dir" ]; then
+              dir_name=$(basename "$artifact_dir")
+              echo "### $dir_name" >> summary.md
+              echo "" >> summary.md
+
+              for file in "$artifact_dir"/*; do
+                if [ -f "$file" ]; then
+                  filename=$(basename "$file")
+                  filesize=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null)
+                  if [ "$filesize" -eq 0 ]; then
+                    echo "- $filename (empty - build may have failed)" >> summary.md
+                  else
+                    echo "- $filename ($((filesize/1024)) KB)" >> summary.md
+                  fi
+                fi
+              done
+              echo "" >> summary.md
+            fi
+          done
+
+          cat summary.md
+
+      - name: Upload summary report
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-summary
+          path: |
+            summary.md
+            all-artifacts/
+          retention-days: 30
