@@ -57,7 +57,8 @@ jobs:
         if: matrix.tool == 'rustfmt'
         shell: bash
         run: |
-          sed -i '/panic = "abort"/d' tool-source/.cargo/config.toml
+          rm tool-source/.cargo/config.toml
+          cp .cargo/config_rustfmt.toml tool-source/.cargo/config.toml
 
       - name: Build tool
         shell: bash
