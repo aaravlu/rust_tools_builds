@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-24.04, windows-2022]
-        tool: [cargo-cache, cargo-clippy, cargo-nextest, rustfmt]
+        tool: [cargo-cache, cargo-nextest]
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.tool }} on ${{ matrix.os }}
 
@@ -30,7 +30,7 @@ jobs:
           echo "Removed link.exe in git"
 
       - name: Setup MSVC
-        if: matrix.os == 'windows-2022' && matrix.tool != 'cargo-clippy'
+        if: matrix.os == 'windows-2022'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
@@ -43,8 +43,8 @@ jobs:
       - name: Checkout ${{ matrix.tool }}
         uses: actions/checkout@v6
         with:
-          repository: ${{ fromJSON('{"cargo-cache":"matthiaskrgr/cargo-cache","cargo-clippy":"rust-lang/rust-clippy","cargo-nextest":"nextest-rs/nextest","rustfmt":"rust-lang/rustfmt"}')[matrix.tool] }}
-          ref: ${{ fromJSON('{"cargo-cache":"refs/tags/0.8.3","cargo-clippy":"refs/tags/rust-1.91.0","cargo-nextest":"refs/tags/cargo-nextest-0.9.114","rustfmt":"refs/tags/v1.8.0"}')[matrix.tool] }}
+          repository: ${{ fromJSON('{"cargo-cache":"matthiaskrgr/cargo-cache", "cargo-nextest":"nextest-rs/nextest"}')[matrix.tool] }}
+          ref: ${{ fromJSON('{"cargo-cache":"refs/tags/0.8.3", "cargo-nextest":"refs/tags/cargo-nextest-0.9.114"}')[matrix.tool] }}
           path: tool-source
 
       - name: Copy cargo config
@@ -53,14 +53,7 @@ jobs:
           mkdir -p tool-source/.cargo
           cp .cargo/config.toml tool-source/.cargo/
 
-      - name: Handle panic
-        if: matrix.tool == 'rustfmt' || matrix.tool == 'cargo-clippy'
-        shell: bash
-        run: |
-          rm tool-source/.cargo/config.toml
-          cp .cargo/config_2.toml tool-source/.cargo/config.toml
-
-      - name: Build tool
+      - name: Build
         shell: bash
         run: |
           cd tool-source
@@ -121,27 +114,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
-          name: ${{ matrix.tool }}-${{ matrix.os }}
+          name: ${{ matrix.tool }}_${{ matrix.os }}
           path: artifacts/
           if-no-files-found: warn
-          retention-days: 7
-
-  collect-artifacts:
-    name: Collect All Artifacts
-    runs-on: ubuntu-24.04
-    needs: build
-    if: always()
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: all-artifacts
-
-      - name: List downloaded artifacts
-        run: |
-          echo "Downloaded artifacts structure:"
-          find all-artifacts -type f | sort
-          echo ""
-          echo "Total files:"
-          find all-artifacts -type f | wc -l
