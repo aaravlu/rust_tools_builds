@@ -54,11 +54,11 @@ jobs:
           cp .cargo/config.toml tool-source/.cargo/
 
       - name: Handle panic
-        if: matrix.tool == 'rustfmt'
+        if: matrix.tool == 'rustfmt' || matrix.tool == 'cargo-clippy'
         shell: bash
         run: |
           rm tool-source/.cargo/config.toml
-          cp .cargo/config_rustfmt.toml tool-source/.cargo/config.toml
+          cp .cargo/config_2.toml tool-source/.cargo/config.toml
 
       - name: Build tool
         shell: bash
