@@ -18,7 +18,16 @@ jobs:
         if: matrix.os == 'windows-2022'
         run: |
           git config --system core.longpaths true
+          echo "Enabled long paths in git"
+
           New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+          echo "Enabled long paths in registry"
+
+          $git_link = "C:\Program Files\Git\usr\bin\link.exe"
+          if (Test-Path $git_link) {
+              Rename-Item $git_link "_link.exe"
+          }
+          echo "Removed link.exe in git"
 
       - name: Setup MSVC
         if: matrix.os == 'windows-2022'
