@@ -36,6 +36,7 @@ jobs:
           path: tool-source
 
       - name: Copy cargo config
+        shell: bash
         run: |
           mkdir -p tool-source/.cargo
           cp .cargo/config.toml tool-source/.cargo/
