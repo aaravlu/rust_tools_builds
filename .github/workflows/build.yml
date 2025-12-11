@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-24.04, windows-2022]
-        tool: [cargo-cache, cargo-clippy, cargo-nextest, rustfmt, rust-analyzer]
+        tool: [cargo-cache, cargo-clippy, cargo-nextest, rustfmt]
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.tool }} on ${{ matrix.os }}
 
@@ -31,8 +31,8 @@ jobs:
       - name: Checkout ${{ matrix.tool }}
         uses: actions/checkout@v6
         with:
-          repository: ${{ fromJSON('{"cargo-cache":"matthiaskrgr/cargo-cache","cargo-clippy":"rust-lang/rust-clippy","cargo-nextest":"nextest-rs/nextest","rustfmt":"rust-lang/rustfmt","rust-analyzer":"rust-lang/rust-analyzer"}')[matrix.tool] }}
-          ref: ${{ fromJSON('{"cargo-cache":"refs/tags/0.8.3","cargo-clippy":"refs/tags/rustc-1.80.0-2024-06-13","cargo-nextest":"refs/tags/cargo-nextest-0.9.70","rustfmt":"refs/tags/rustfmt-1.7.0","rust-analyzer":"refs/tags/2024-06-17"}')[matrix.tool] }}
+          repository: ${{ fromJSON('{"cargo-cache":"matthiaskrgr/cargo-cache","cargo-clippy":"rust-lang/rust-clippy","cargo-nextest":"nextest-rs/nextest","rustfmt":"rust-lang/rustfmt"}')[matrix.tool] }}
+          ref: ${{ fromJSON('{"cargo-cache":"refs/tags/0.8.3","cargo-clippy":"refs/tags/rust-1.91.0","cargo-nextest":"refs/tags/cargo-nextest-0.9.114","rustfmt":"refs/tags/v1.8.0"}')[matrix.tool] }}
           path: tool-source
 
       - name: Copy cargo config
@@ -44,32 +44,7 @@ jobs:
         shell: bash
         run: |
           cd tool-source
-
-          # 检查是否有Cargo.toml文件
-          if [ -f "Cargo.toml" ]; then
-            echo "Building with cargo..."
-            cargo build --release --locked
-          elif [ -f "Cargo.lock" ]; then
-            echo "Building with cargo (Cargo.lock found)..."
-            cargo build --release
-          elif [ -f "rust-toolchain" ] || [ -f "rust-toolchain.toml" ]; then
-            echo "Building with rust toolchain..."
-            cargo build --release
-          else
-            echo "No Cargo.toml found, checking for alternative build methods..."
-
-            # 检查是否有Makefile或build.rs
-            if [ -f "Makefile" ]; then
-              echo "Building with make..."
-              make release
-            elif [ -f "build.rs" ]; then
-              echo "Building with cargo (build.rs found)..."
-              cargo build --release
-            else
-              echo "ERROR: No recognized build configuration found"
-              exit 1
-            fi
-          fi
+          cargo b -r
 
       - name: Package artifact
         run: |
@@ -124,7 +99,7 @@ jobs:
         shell: bash
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.tool }}-${{ matrix.os }}
           path: artifacts/
