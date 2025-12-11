@@ -14,16 +14,19 @@ jobs:
     name: Build ${{ matrix.tool }} on ${{ matrix.os }}
 
     steps:
-      - name: Enable long paths in git (Windows only)
+      - name: Windows config
         if: matrix.os == 'windows-2022'
         run: |
           git config --system core.longpaths true
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
 
-      - name: Enable long paths in Windows registry
+      - name: Setup MSVC
         if: matrix.os == 'windows-2022'
-        run: |
-          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
-            -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          toolset: 14.29
+          sdk: 10.0.19041.0
 
       - name: Checkout self
         uses: actions/checkout@v6
@@ -40,6 +43,12 @@ jobs:
         run: |
           mkdir -p tool-source/.cargo
           cp .cargo/config.toml tool-source/.cargo/
+
+      - name: Handle panic
+        if: matrix.tool == 'rustfmt'
+        shell: bash
+        run: |
+          sed -i '/panic = "abort"/d' tool-source/.cargo/config.toml
 
       - name: Build tool
         shell: bash
