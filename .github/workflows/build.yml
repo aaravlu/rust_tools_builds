@@ -30,7 +30,7 @@ jobs:
           echo "Removed link.exe in git"
 
       - name: Setup MSVC
-        if: matrix.os == 'windows-2022'
+        if: matrix.os == 'windows-2022' && matrix.tool != 'cargo-clippy'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
@@ -145,69 +145,3 @@ jobs:
           echo ""
           echo "Total files:"
           find all-artifacts -type f | wc -l
-
-      - name: Create summary report
-        run: |
-          echo "# Build Summary Report" > summary.md
-          echo "" >> summary.md
-          echo "Generated on: $(date)" >> summary.md
-          echo "" >> summary.md
-          echo "## Build Matrix" >> summary.md
-          echo "" >> summary.md
-          echo "| Tool | Ubuntu 24.04 | Windows 2022 |" >> summary.md
-          echo "|------|--------------|--------------|" >> summary.md
-
-          # Check each tool for both platforms
-          for tool in cargo-cache cargo-clippy cargo-nextest rustfmt rust-analyzer; do
-            ubuntu_file="all-artifacts/${tool}-ubuntu-24.04/${tool}"
-            windows_file="all-artifacts/${tool}-windows-2022/${tool}.exe"
-
-            ubuntu_status="❌"
-            windows_status="❌"
-
-            if [ -f "$ubuntu_file" ] && [ -s "$ubuntu_file" ]; then
-              ubuntu_status="✅"
-            fi
-
-            if [ -f "$windows_file" ] && [ -s "$windows_file" ]; then
-              windows_status="✅"
-            fi
-
-            echo "| $tool | $ubuntu_status | $windows_status |" >> summary.md
-          done
-
-          echo "" >> summary.md
-          echo "## Artifact Details" >> summary.md
-          echo "" >> summary.md
-
-          for artifact_dir in all-artifacts/*/; do
-            if [ -d "$artifact_dir" ]; then
-              dir_name=$(basename "$artifact_dir")
-              echo "### $dir_name" >> summary.md
-              echo "" >> summary.md
-
-              for file in "$artifact_dir"/*; do
-                if [ -f "$file" ]; then
-                  filename=$(basename "$file")
-                  filesize=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null)
-                  if [ "$filesize" -eq 0 ]; then
-                    echo "- $filename (empty - build may have failed)" >> summary.md
-                  else
-                    echo "- $filename ($((filesize/1024)) KB)" >> summary.md
-                  fi
-                fi
-              done
-              echo "" >> summary.md
-            fi
-          done
-
-          cat summary.md
-
-      - name: Upload summary report
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-summary
-          path: |
-            summary.md
-            all-artifacts/
-          retention-days: 30
